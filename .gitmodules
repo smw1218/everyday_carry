@@ -1,0 +1,3 @@
+[submodule "src/github.com/fitstar/falcore"]
+	path = src/github.com/fitstar/falcore
+	url = git@github.com:fitstar/falcore.git
