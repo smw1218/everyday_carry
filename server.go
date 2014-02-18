@@ -16,9 +16,8 @@ func main() {
 	// setup pipeline
 	pipeline := falcore.NewPipeline()
 
-	controller, _ := edc.NewController("localhost", 6379)
 	ww := edc.NewWebsocketWorker(*domain, *assetBase)
-	ww.NewConnection = controller.NewConnectionHandler
+	edc.NewController("localhost", 6379, ww)
 
 	// file stuff
 	ff := &filter.FileFilter{

@@ -33,9 +33,10 @@ type ServerPush struct {
 }
 
 type ActiveClient struct {
-	reqID    string
-	session  string
-	pushChan chan *ServerPush
+	ReqID    string
+	Session  string
+	PushChan chan *ServerPush
+	Context map[string]interface{} // pointer to falcore.Request
 	// origReq *falcore.Request // want to avoid these but they might be used for for logging
 	// ws *websocket.Conn
 }
@@ -77,18 +78,22 @@ func (ww *WebsocketWorker) broker() {
 		// TODO fix for multiple clients from the same session
 		select {
 		case add := <-ww.brokerAddChan:
-			wsClients[add.session] = add
+			wsClients[add.Session] = add
 		case rem := <-ww.brokerRemChan:
-			delete(wsClients, rem.session)
+			delete(wsClients, rem.Session)
 		case broadcast := <-ww.brokerBCast:
 			for _, reg := range wsClients {
 				select {
-				case reg.pushChan <- broadcast:
+				case reg.PushChan <- broadcast:
 				default:
 				}
 			}
 		}
 	}
+}
+
+func (ww *WebsocketWorker) SendBroadcast(sp *ServerPush) {
+	ww.brokerBCast <- sp
 }
 
 func (ww *WebsocketWorker) WebsocketUpgrade(req *falcore.Request, responseHeader http.Header) *http.Response {
@@ -109,18 +114,19 @@ func (ww *WebsocketWorker) WebsocketUpgrade(req *falcore.Request, responseHeader
 func (ww *WebsocketWorker) WebsocketHandler(req *falcore.Request, ws *websocket.Conn) {
 	// Register
 	sid, _ := req.Context["session"].(string)
-	pushChan := make(chan *ServerPush, 5)
+	PushChan := make(chan *ServerPush, 5)
 	ac := &ActiveClient{
-		reqID:    req.ID,
-		session:  sid,
-		pushChan: pushChan,
+		ReqID:    req.ID,
+		Session:  sid,
+		PushChan: PushChan,
+		Context: req.Context,
 	}
 	ww.brokerAddChan <- ac
 	go ww.websocketReader(ws, ac)
 	if ww.NewConnection != nil {
 		go ww.NewConnection(ac)
 	}
-	for sp := range pushChan {
+	for sp := range PushChan {
 		pkt, err := json.Marshal(sp)
 		if err != nil {
 			falcore.Error("%v Error encoding json", req.ID)
@@ -136,22 +142,22 @@ func (ww *WebsocketWorker) WebsocketHandler(req *falcore.Request, ws *websocket.
 }
 
 func (ww *WebsocketWorker) websocketReader(ws *websocket.Conn, ac *ActiveClient) {
-	defer close(ac.pushChan)
+	defer close(ac.PushChan)
 	for {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
-			falcore.Error("%v read err: %v\n", ac.reqID, err)
+			falcore.Error("%v read err: %v\n", ac.ReqID, err)
 			return
 		}
 		req := &Request{}
 		err = json.Unmarshal(data, req)
 		if err != nil {
-			falcore.Error("%v Malformed request %v", ac.reqID, err)
+			falcore.Error("%v Malformed request %v", ac.ReqID, err)
 		}
 		if wsrh, ok := ww.routes[req.Method]; ok {
 			go wsrh.HandleRequest(req, ac)
 		} else {
-			falcore.Warn("%v No route for method: %v", ac.reqID, req.Method)
+			falcore.Warn("%v No route for method: %v", ac.ReqID, req.Method)
 		}
 	}
 }

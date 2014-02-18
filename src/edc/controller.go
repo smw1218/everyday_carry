@@ -1,84 +1,239 @@
 package edc
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/vmihailenco/redis"
 	"github.com/fitstar/falcore"
+	"hash/crc32"
 	"sort"
 )
 
 type Controller struct {
 	client *redis.Client
+	ww *WebsocketWorker
 }
 
-func NewController(host string, port int) (*Controller, error) {
+func NewController(host string, port int, ww *WebsocketWorker) (*Controller, error) {
 	client := redis.NewTCPClient(fmt.Sprintf("%v:%v", host, port), "", -1)
-	return &Controller{
+	controller := &Controller{
 		client: client,
-	}, nil
-}
-
-func (s *Controller) Set(key string, val interface{}) error {
-	if j, err := json.Marshal(val); err == nil {
-		sr := s.client.Set(key, string(j))
-		return sr.Err()
-	} else {
-		return err
+		ww: ww,
 	}
-	return nil
-}
-
-func (s *Controller) Get(key string, val interface{}) error {
-	sr := s.client.Get(key)
-	if sr.Err() != nil {
-		return sr.Err()
-	}
-	return json.Unmarshal([]byte(sr.Val()), val)
+	// add all my routes
+	ww.NewConnection = controller.NewConnectionHandler
+	ww.AddRoute("answer", NewWebsocketRequestHandler(controller.HandleAnswer))
+	ww.AddRoute("select-question", NewWebsocketRequestHandler(controller.HandleSelectedQuestion))
+	return controller, nil
 }
 
 func (s *Controller) Close() (error) {
 	return s.client.Close()
 }
 
-func (s *Controller) VoteQuestion(question string) (error) {
-	sr := s.client.ZIncrBy("questions/current", 1.0, question)
-	return sr.Err()
-}
-
 func (s *Controller) NewConnectionHandler(ac *ActiveClient) {
-	sp := s.GetQuestions()
-	ac.pushChan <- sp
+	sp, top := s.getQuestions("")
+	ac.PushChan <- sp
+	if top != "" {
+		ac.Context["selected_question"] = top
+		ans, _ := s.getAnswer(ac.Session, top)
+
+		sp, top = s.getAnswers(top, ans)
+		ac.PushChan <- sp
+
+		if ans != "" {
+			ac.PushChan <- s.getSelectedAnswer(ans)
+		}
+	}
 }
 
-func (s *Controller) GetQuestions() (*ServerPush) {
+func (s *Controller) HandleAnswerOld(request *Request, ac *ActiveClient) {
+	falcore.Info("Got %#v", request)
+	q, ok := request.Data["question"].(string)
+	a, ok2 := request.Data["answer"].(string)
+	if ok && ok2 {
+		s.voteAnswer(ac.Session, q, a)
+		// TODO broadcast only to conns listening to the current question
+		sp, _ := s.getAnswers(q, a)
+		s.ww.SendBroadcast(sp)
+	}
+}
+
+func (s *Controller) HandleSelectedQuestion(request *Request, ac *ActiveClient) {
+	falcore.Info("Got %#v", request)
+	q, ok := request.Data["question"].(string)
+	if ok {
+		ac.Context["selected_question"] = q
+		sp, _ := s.getQuestions(q)
+		ans, _ := s.getAnswer(ac.Session, q)
+		spa, _ := s.getAnswers(q, ans)
+		ac.PushChan <- sp
+		ac.PushChan <- spa
+		// send selected
+		ac.PushChan <- s.getSelectedAnswer(ans)
+	}
+}
+
+func (s *Controller) HandleAnswer(request *Request, ac *ActiveClient) {
+	falcore.Info("Got %#v", request)
+	q, ok := request.Data["question"].(string)
+	ans, ok2 := request.Data["answer"].(string)
+	sp := &ServerPush{
+		Method: "error",
+		Data: map[string]interface{}{"error": "Aww, crap"},			
+	}
+	if ok && ok2 {
+		_, err := s.voteAnswer(ac.Session, q, ans)
+		if err == nil {
+			sp, _ = s.getAnswers(q, ans)
+		}
+	}
+	// send reply first
+	ac.PushChan <- sp
+	// send selected
+	ac.PushChan <- s.getSelectedAnswer(ans)
+	// send to everyone else
+	s.ww.SendBroadcast(sp)
+
+} 
+
+func (s *Controller) voteAnswer(session, question, answer string) (float64, error){
+	prev_ans, err := s.getAnswer(session, question)
+	if err != nil {
+		falcore.Error("Hget err for session answer: %v", err)
+		return 0.0, err
+	}
+	if answer == prev_ans {
+		return 0.0, nil
+	}
+
+	// TODO multi?
+	if prev_ans != "" && answer !=  prev_ans {
+		resp := s.client.ZIncrBy(fmt.Sprintf("answers/%v", question), -1.0, prev_ans)
+		if resp.Err() != nil {
+			falcore.Error("ZDecrement err: %v", resp.Err())
+			return 0.0, resp.Err()
+		}
+	}
+	resp := s.client.HSet(session, question, answer)
+	if resp.Err() != nil {
+		falcore.Error("Hset err: %v", resp.Err())
+		return 0.0, resp.Err()
+	}
+	sr := s.client.ZIncrBy(fmt.Sprintf("answers/%v", question), 1.0, answer)
+	return sr.Val(), sr.Err()
+}
+
+func (s *Controller) getAnswer(session, question string) (string, error){
+	ans := s.client.HGet(session, question)
+	if ans.Err() != nil && ans.Err().Error() == "(nil)" {
+		return "", nil
+	}
+	return ans.Val(), ans.Err()
+}
+
+func (s *Controller) getSelectedAnswer(answer string) *ServerPush {
+	return &ServerPush {
+		Method: "answer-selected",
+		Data: map[string]interface{}{"answer":&RAnswer{answer,0.0,true,crc32.ChecksumIEEE([]byte(answer))}},
+	}
+}
+
+func (s *Controller) getAnswers(question, selected string) (*ServerPush, string) {
+	resp := s.client.ZRangeByScoreWithScoresMap(fmt.Sprintf("answers/%v", question), "-inf", "+inf", 0, 1000)
+	if resp.Err() != nil {
+		falcore.Error("Zrange err: %v", resp.Err())
+		return &ServerPush{
+			Method: "error",
+			Data: map[string]interface{}{"error": "Aww, crap"},
+		}, ""
+	}
+	mp := resp.Val()
+	falcore.Debug("as: %#v", mp)
+	answers := make(ByScore, len(mp))
+	i := 0
+	for q,s := range mp {
+		x := &RAnswer{q,s,false,crc32.ChecksumIEEE([]byte(q))}
+		if selected == q {
+			x.Selected = true
+		}		
+		answers[i] = x
+		i++
+	}
+	sort.Sort(answers)
+	top := ""
+	if len(answers) > 0 {
+		top = answers[0].(*RAnswer).Answer
+	}
+	data := make(map[string]interface{})
+	data["question"] = question
+	data["answers"] = answers
+	return &ServerPush{
+		Method: "answers",
+		Data: data,
+	}, top
+}
+
+func (s *Controller) getQuestions(selected string) (*ServerPush, string) {
 	resp := s.client.ZRangeByScoreWithScoresMap("questions/current", "-inf", "+inf", 0, 1000)
 	if resp.Err() != nil {
 		falcore.Error("Zrange err: %v", resp.Err())
+		return &ServerPush{
+			Method: "error",
+			Data: map[string]interface{}{"error": "Aww, crap"},
+		}, ""
 	}
 	mp := resp.Val()
 	falcore.Debug("qs: %#v", mp)
 	questions := make(ByScore, len(mp))
 	i := 0
 	for q,s := range mp {
-		questions[i] = &RQuestion{q,s}
+		x := &RQuestion{q,s,false,crc32.ChecksumIEEE([]byte(q))}
+		if selected == q {
+			x.Selected = true
+		}
+		questions[i] = x
 		i++
 	}
 	sort.Sort(questions)
+	top := ""
+	if len(questions) > 0 {
+		topRQ := questions[0].(*RQuestion)
+		top = topRQ.Question
+		if selected == "" {
+			topRQ.Selected = true
+		}
+	}
 	data := make(map[string]interface{})
 	data["questions"] = questions
 	return &ServerPush{
 		Method: "questions",
 		Data: data,
-	}
+	}, top
 }
 
+func (s *Controller) voteQuestion(question string) (float64, error) {
+	sr := s.client.ZIncrBy("questions/current", 1.0, question)
+	return sr.Val(), sr.Err()
+}
 
+type Votable interface {
+	Votes() float64
+}
 type RQuestion struct {
 	Question string `json:"question"`
-	Votes float64	`json:"votes"`
+	VotesF float64	`json:"votes"`
+	Selected bool `json:"selected"`
+	Id uint32 `json:"id"`
 }
-type ByScore []*RQuestion
+func (rq *RQuestion) Votes() float64 { return rq.VotesF }
+type RAnswer struct {
+	Answer string `json:"answer"`
+	VotesF float64	`json:"votes"`
+	Selected bool `json:"selected"`
+	Id uint32 `json:"id"`
+}
+func (rq *RAnswer) Votes() float64 { return rq.VotesF }
+type ByScore []Votable
 func (a ByScore) Len() int           { return len(a) }
 func (a ByScore) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByScore) Less(i, j int) bool { return a[j].Votes < a[i].Votes }
+func (a ByScore) Less(i, j int) bool { return a[j].Votes() < a[i].Votes() }

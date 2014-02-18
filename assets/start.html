@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<script src="assets/jquery.js"></script>
+<script language="javascript" type="text/javascript">  
+$.fn.exists = function () {
+    return this.length !== 0;
+}
+var output;
+var selectedQuestion;
+var selectedAnswer;
+
+$( document ).ready(function() {
+	output = document.getElementById("output")
+
+	// same location and path as the http location
+	var loc = window.location, wsUri;
+	if (loc.protocol === "https:") {
+    	wsUri = "wss:";
+	} else {
+    	wsUri = "ws:";
+	}
+	wsUri += "//" + loc.host + loc.pathname;
+
+	websocket = new WebSocket(wsUri); 
+	websocket.onopen = function(evt) { onOpen(evt) }; 
+	websocket.onclose = function(evt) { onClose(evt) }; 
+	websocket.onmessage = function(evt) { onMessage(evt) }; 
+	websocket.onerror = function(evt) { onError(evt) };
+
+	// Vote for a new answer
+	$("#answer-form").submit(submitNewAnswer);
+})
+
+function onOpen(evt) { 
+	writeToScreen("CONNECTED"); 
+}  
+
+function onClose(evt) { writeToScreen("DISCONNECTED"); }  
+function onError(evt) { writeToScreen('<span style="color: red;">ERROR:</span> ' + evt.data); }  
+
+function doSend(message) { 
+	writeToScreen("SENT: " + message);  
+	websocket.send(message);
+}  
+function onMessage(evt) { 
+	var obj = $.parseJSON(evt.data);
+	switch(obj.method) {
+		case "questions":
+			showQuestions(obj.data.questions);
+			break;
+		case "answers":
+			showAnswers(obj.data.answers);
+			break;
+		case "answer-selected":
+			showSelectedAnswer(obj.data.answer);
+			break;
+
+	}
+	writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data+'</span>'); 
+}
+
+function writeToScreen(message) { 
+	var pre = document.createElement("p"); pre.style.wordWrap = "break-word"; 
+	pre.innerHTML = message; 
+	$("#output").append(pre); 
+}
+
+/* Handles the click on a question */
+function selectQuestion(evt) {
+	evt.preventDefault();
+	var q = $(this).find("div.question-text").html();
+	if(q != selectedQuestion) {
+		// clear answers
+		$("li").remove(".answer");
+	
+		// send new selection to server
+		var to_send = {
+			method: "select-question",
+			data: {
+				"question": q
+			}
+		};
+		doSend(JSON.stringify(to_send));
+	}
+}
+
+/* Handles questions sent from the server */
+function showQuestions(questions) {
+	var qs = [];
+	$.each(questions, function(i, q) {
+		if(q.selected) {
+			$("#answer-form-question").val(q.question);
+			selectedQuestion = q.question;
+		}
+		var qli = null;
+		if(!$("#li-"+q.id).exists()) {
+			qli = $(".question-template")
+				.clone()
+				.attr("id", "li-"+q.id)
+				.addClass("question")
+				.removeClass("question-template");
+			qli.find("div.question-text")
+				.html(q.question);
+			qli.find("a.question-link")
+				.attr("id", "sel-"+q.id)
+				.click(selectQuestion);
+			$("#questions").append(qli);
+		}
+		qli = $("#li-"+q.id);
+		qli.find("div.vote-count")
+			.attr("id", "vote-"+q.id)
+			.html(q.votes);
+
+		// add selectino check
+		var checkmark = "&nbsp;";
+		if(q.selected) {
+			checkmark = "&#x2713;";
+		} 
+		qli.find("span.selected-check")
+			.html(checkmark);
+	});
+}
+
+/* Handles form submission */
+function submitNewAnswer(event) {
+	event.preventDefault();
+	var temp = $("#answer-form").serializeArray();
+	writeToScreen(JSON.stringify(temp));
+	var obj = {};
+	$.each(temp, function(i, q) {
+		obj[q.name] = q.value
+	});
+	var to_send = {
+		method: "answer",
+		data: obj
+	};
+	doSend(JSON.stringify(to_send));
+	//alert( "Handler for .submit() called." );
+}
+
+/* Handles the click on an answer */
+function selectAnswer(evt) {
+	evt.preventDefault();
+	var a = $(this).find("div.answer-text").html();
+	if(a != selectedAnswer) {
+		// send new selection to server
+		var to_send = {
+			method: "answer",
+			data: {
+				"answer": a,
+				"question": selectedQuestion
+			}
+		};
+		doSend(JSON.stringify(to_send));
+	}
+}
+
+/* Handles selection of answer message */
+function showSelectedAnswer(answer) {
+	selectedAnswer = answer.answer;
+	// clear selection then add selection check
+	$("#answers").find("span.selected-check").html("&nbsp;")
+	$("#li-"+answer.id).find("span.selected-check").html("&#x2713;");
+}
+
+/* Handles answers sent from the server */
+function showAnswers(answers) {
+	var qs = [];
+	$.each(answers, function(i, q) {
+		if($("#vote-"+q.id).exists()) {
+			$("#vote-"+q.id).html(q.votes);
+		} else {
+			var ali = $(".answer-template")
+				.clone()
+				.attr("id", "li-"+q.id)
+				.addClass("answer")
+				.removeClass("answer-template");
+			ali.find("div.answer-text")
+				.html(q.answer);
+			ali.find("a.answer-link")
+				.click(selectAnswer);
+			ali.find("div.vote-count")
+				.attr("id", "vote-"+q.id)
+				.html(q.votes)
+			$("#answers").append(ali);
+		}
+	});
+}
+
+</script>
+<head>
+	<link rel="stylesheet" type="text/css" href="/assets/style.css">
+	<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+	<meta name="viewport" id="vp" content="initial-scale=1.0,user-scalable=yes,width=device-width">
+<head>
+
+<body>
+<div class="wrapper">
+<h2>Questions</h2>
+
+<section class="list-container">
+	<ul id="questions">
+		<li class="question-template">
+		<a href="#" class="question-link">
+		<span class="big-q">?</span>
+		<div class="question-text">how much wood could a woodchuck chuck if a woodchuck could chuck wood</div>
+		<div class="right">
+		<div class="vote-count"></div>
+		<div class="selection-area"><span class="selected-check"></span></div>
+		</div>
+		</a>
+		</li>
+	</ul>
+</section>
+</div>
+
+<div class="wrapper">
+<h2>Answers</h2>
+<section class="list-container">
+	<ul id="answers">
+		<li class="answer-template">
+		<a href="#" class="answer-link">
+		<span class="big-q">&#x2605;</span>
+		<div class="answer-text">a whole lotta wood</div>
+		<div class="right">
+		<div class="vote-count"></div>
+		<div class="selection-area"><span class="selected-check"></span></div>
+		</div>
+		</a>
+		</li>	
+	</ul>
+	<div class="new-answer">
+	<form id="answer-form">
+		<input type="hidden" id="answer-form-question" name="question" value="nothing" />
+		<div class="input-wrapper">
+		<input type="text" class="text-input" id="new-answer" name="answer" />
+		</div>
+		<input type="submit" value="New Answer" id="new-answer-submit" />
+	</form>
+	</div>	
+
+</section>
+</div>
+
+<!-- debug stuff -->
+<div id="output"></div>
+
+</body>
+</html>

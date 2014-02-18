@@ -1,0 +1,158 @@
+body {
+	margin: 0;
+	font-family: Helvetica, Arial, sans-serif;
+	font-size: 12pt;
+	color: #222;
+}
+
+div.wrapper {
+	margin: 15px;
+	margin-right: 15px;
+	border-radius: 5px;
+	border: 1px solid #ddd;
+}
+
+li.answer-template, li.question-template {
+	display: none;
+}
+
+section.list-container {
+	margin: 0;
+	text-align: left;
+	border-top: solid 2px #ddd;
+	/* overflow: left; */
+}
+ul {
+	list-style-type: none;
+	margin: 0;
+	padding: 0;
+}
+
+li.question, li.answer {
+	display: list-item;
+	border-bottom: 1px solid #f2f2f4;
+	padding-left: 10px;
+	padding-right: 10px;
+}
+
+a.question-link,a.answer-link{
+	position: relative;
+	display: block;
+}
+
+.big-q {
+	font-size: 25px;
+	font-weight: bold;
+	color: #999;
+	vertical-align:middle;
+	display: inline-block;
+	height: 100%;
+}
+
+div.question-text,div.answer-text {
+	display: inline;
+}
+
+div.right {
+	display: inline;
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	font-weight: bold;
+	font-size: 90%;
+	height: 100%;	
+	line-height: 1.0;
+	display: inline-block;
+}
+
+div.vote-count {
+	position:absolute;
+	top: 50%;
+	right: 15px;
+	margin-top: -5px;
+	display: inline-block;
+}
+
+div.selection-area {
+	position:absolute;
+	top: 50%;
+	right: 0;
+	display: inline-block;
+	margin-top: -5px;
+	width: 10px;
+	height: 10px;
+	border: 1px solid #666;
+}
+span.selected-check {
+	position:absolute;
+	right: -5px;
+	margin-top: -5px;
+	font-size: 1.5em;
+	color: #090;
+}
+
+div.new-answer {
+	margin-left: 15px;
+	margin-right: 15px;	
+}
+div.input-wrapper{
+	margin-top: 2px;
+	border: 2px inset;
+}
+input.text-input {
+	display:block; 
+	width:100%;
+	padding:2px;
+	border-width:0;
+	margin: 0;
+	font-size: 1em;
+}
+
+
+a,
+.exampleHeading .text {
+	color: #375EAB;
+	text-decoration: none;
+}
+a:hover,
+.exampleHeading .text:hover {
+	text-decoration: underline;
+}
+p,
+pre,
+{
+	margin: 20px;
+}
+
+h1,
+h2,
+h3,
+h4,
+.rootHeading {
+	padding: 0;
+	color: #375EAB;
+	font-weight: bold;
+}
+h1 {
+	font-size: 24px;
+}
+h2 {
+	margin: 0;
+	font-size: 20px;
+	background: #E0EBF5;
+	padding: 2px 5px;
+}
+h3 {
+	font-size: 20px;
+}
+h3,
+h4 {
+	margin: 20px 5px;
+}
+h4 {
+	font-size: 16px;
+}
+.rootHeading {
+	font-size: 20px;
+	margin: 0;
+}
