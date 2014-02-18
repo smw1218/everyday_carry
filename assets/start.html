@@ -143,7 +143,6 @@ function showQuestions(questions) {
 function submitNewAnswer(event) {
 	event.preventDefault();
 	var temp = $("#answer-form").serializeArray();
-	writeToScreen(JSON.stringify(temp));
 	var obj = {};
 	$.each(temp, function(i, q) {
 		obj[q.name] = q.value
