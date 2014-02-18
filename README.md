@@ -4,6 +4,28 @@ Everyday Carry
 Server that provides a live poll environment where the same questions are presented and
 everyone enters their answers.  Answer updates are pushed live to all connected.
 
+Run
+---
+Install redis
+
+debian/ubuntu
+apt-get install redis-server
+
+mac os
+brew install redis # follow brew instructions for launchctl to start
+
+```
+git clone git@github.com:smw1218/everyday_carry.git
+cd everyday_carry/
+git submodule update --init
+export GOPATH=$(pwd)
+go get github.com/gorilla/websocket
+go get github.com/vmihailenco/redis
+go run server.go
+```
+
+Runs on port 8080 by default so try http://localhost:8080/
+
 Current
 -------
 - Questions entered manually in redis
