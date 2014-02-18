@@ -149,7 +149,7 @@ func (s *Controller) voteAnswer(session, question, answer string) (float64, erro
 			return 0.0, resp.Err()
 		}
 	}
-	resp := s.client.HSet(session, question, answer)
+	resp := s.client.HSet(fmt.Sprintf("user_answers/%v", session), question, answer)
 	if resp.Err() != nil {
 		falcore.Error("Hset err: %v", resp.Err())
 		return 0.0, resp.Err()
@@ -159,7 +159,7 @@ func (s *Controller) voteAnswer(session, question, answer string) (float64, erro
 }
 
 func (s *Controller) getAnswer(session, question string) (string, error) {
-	ans := s.client.HGet(session, question)
+	ans := s.client.HGet(fmt.Sprintf("user_answers/%v", session), question)
 	if ans.Err() != nil && ans.Err().Error() == "(nil)" {
 		return "", nil
 	}

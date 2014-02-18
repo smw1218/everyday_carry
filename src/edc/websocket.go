@@ -165,7 +165,7 @@ func (ww *WebsocketWorker) websocketReader(ws *websocket.Conn, ac *ActiveClient)
 			falcore.Error("%v Malformed request %v", ac.ReqID, err)
 		}
 		if wsrh, ok := ww.routes[req.Method]; ok {
-			go wsrh(req, ac)
+			wsrh(req, ac)
 		} else {
 			falcore.Warn("%v No route for method: %v", ac.ReqID, req.Method)
 		}
