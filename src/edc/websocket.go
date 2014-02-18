@@ -9,17 +9,21 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 )
 
 type WebsocketWorker struct {
-	domain        string
-	assetBase     string
-	brokerAddChan chan *ActiveClient
-	brokerRemChan chan *ActiveClient
-	brokerBCast   chan *ServerPush
-	routes        map[string]WebsocketRequestHandler
-	NewConnection func(*ActiveClient)
+	domain            string
+	assetBase         string
+	bytesSent         uint64
+	messagesSent      uint64
+	activeClientCount int64
+	brokerAddChan     chan *ActiveClient
+	brokerRemChan     chan *ActiveClient
+	brokerBCast       chan *ServerPush
+	routes            map[string]WebsocketRequestHandler
+	NewConnection     func(*ActiveClient)
 }
 
 type Request struct {
@@ -36,23 +40,12 @@ type ActiveClient struct {
 	ReqID    string
 	Session  string
 	PushChan chan *ServerPush
-	Context map[string]interface{} // pointer to falcore.Request
+	Context  map[string]interface{} // pointer to falcore.Request
 	// origReq *falcore.Request // want to avoid these but they might be used for for logging
 	// ws *websocket.Conn
 }
 
-type WebsocketRequestHandler interface {
-	HandleRequest(*Request, *ActiveClient)
-}
-
-type websocketRequestHandler func(*Request, *ActiveClient)
-
-func (wsrh websocketRequestHandler) HandleRequest(r *Request, ac *ActiveClient) {
-	wsrh(r, ac)
-}
-func NewWebsocketRequestHandler(f func(*Request, *ActiveClient)) WebsocketRequestHandler {
-	return websocketRequestHandler(f)
-}
+type WebsocketRequestHandler func(*Request, *ActiveClient)
 
 func NewWebsocketWorker(domain, assetBase string) *WebsocketWorker {
 	ww := &WebsocketWorker{
@@ -68,7 +61,7 @@ func NewWebsocketWorker(domain, assetBase string) *WebsocketWorker {
 }
 
 func (ww *WebsocketWorker) AddRoute(method string, wsrh WebsocketRequestHandler) {
-	// TODO sync
+	// TODO sync?
 	ww.routes[method] = wsrh
 }
 
@@ -79,8 +72,10 @@ func (ww *WebsocketWorker) broker() {
 		select {
 		case add := <-ww.brokerAddChan:
 			wsClients[add.Session] = add
+			atomic.AddInt64(&ww.activeClientCount, 1)
 		case rem := <-ww.brokerRemChan:
 			delete(wsClients, rem.Session)
+			atomic.AddInt64(&ww.activeClientCount, -1)
 		case broadcast := <-ww.brokerBCast:
 			for _, reg := range wsClients {
 				select {
@@ -90,6 +85,18 @@ func (ww *WebsocketWorker) broker() {
 			}
 		}
 	}
+}
+
+func (ww *WebsocketWorker) GetActiveClientCount() int64 {
+	return atomic.LoadInt64(&ww.activeClientCount)
+}
+
+func (ww *WebsocketWorker) GetBytesSent() uint64 {
+	return atomic.LoadUint64(&ww.bytesSent)
+}
+
+func (ww *WebsocketWorker) GetMessagesSent() uint64 {
+	return atomic.LoadUint64(&ww.messagesSent)
 }
 
 func (ww *WebsocketWorker) SendBroadcast(sp *ServerPush) {
@@ -119,9 +126,10 @@ func (ww *WebsocketWorker) WebsocketHandler(req *falcore.Request, ws *websocket.
 		ReqID:    req.ID,
 		Session:  sid,
 		PushChan: PushChan,
-		Context: req.Context,
+		Context:  req.Context,
 	}
 	ww.brokerAddChan <- ac
+	defer func() { ww.brokerRemChan <- ac }()
 	go ww.websocketReader(ws, ac)
 	if ww.NewConnection != nil {
 		go ww.NewConnection(ac)
@@ -136,6 +144,8 @@ func (ww *WebsocketWorker) WebsocketHandler(req *falcore.Request, ws *websocket.
 				falcore.Error("%v send err: %v\n", req.ID, err)
 				return
 			}
+			atomic.AddUint64(&ww.messagesSent, 1)
+			atomic.AddUint64(&ww.bytesSent, uint64(len(pkt)))
 		}
 	}
 	falcore.Info("%v Writer closed", req.ID)
@@ -155,7 +165,7 @@ func (ww *WebsocketWorker) websocketReader(ws *websocket.Conn, ac *ActiveClient)
 			falcore.Error("%v Malformed request %v", ac.ReqID, err)
 		}
 		if wsrh, ok := ww.routes[req.Method]; ok {
-			go wsrh.HandleRequest(req, ac)
+			go wsrh(req, ac)
 		} else {
 			falcore.Warn("%v No route for method: %v", ac.ReqID, req.Method)
 		}

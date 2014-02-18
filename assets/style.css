@@ -108,6 +108,21 @@ input.text-input {
 	font-size: 1em;
 }
 
+.stats {
+	margin-left: 10px;
+	margin-right: 10px;
+	margin-top: 2px;
+	margin-bottom: 2px;
+}
+
+.stat_header {
+	font-weight: bold;
+	font-size: 80%;
+}
+
+.stat_value {
+	font-size: 80%;
+}
 
 a,
 .exampleHeading .text {

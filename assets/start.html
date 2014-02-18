@@ -9,6 +9,7 @@ $.fn.exists = function () {
 var output;
 var selectedQuestion;
 var selectedAnswer;
+var debug = false;
 
 $( document ).ready(function() {
 	output = document.getElementById("output")
@@ -33,14 +34,18 @@ $( document ).ready(function() {
 })
 
 function onOpen(evt) { 
-	writeToScreen("CONNECTED"); 
+	if(debug) {
+		writeToScreen("CONNECTED");
+	}
 }  
 
 function onClose(evt) { writeToScreen("DISCONNECTED"); }  
 function onError(evt) { writeToScreen('<span style="color: red;">ERROR:</span> ' + evt.data); }  
 
 function doSend(message) { 
-	writeToScreen("SENT: " + message);  
+	if(debug) {
+		writeToScreen("SENT: " + message);
+	}
 	websocket.send(message);
 }  
 function onMessage(evt) { 
@@ -55,15 +60,26 @@ function onMessage(evt) {
 		case "answer-selected":
 			showSelectedAnswer(obj.data.answer);
 			break;
+		case "stats":
+			showTheStats(obj.data);
+			break;
 
 	}
-	writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data+'</span>'); 
+	if(debug) {
+		writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data+'</span>');
+	}
 }
 
 function writeToScreen(message) { 
 	var pre = document.createElement("p"); pre.style.wordWrap = "break-word"; 
 	pre.innerHTML = message; 
 	$("#output").append(pre); 
+}
+
+function showTheStats(stats) {
+	$.each(stats, function(key, stat) {
+		$("#"+key).html(stat);
+	});
 }
 
 /* Handles the click on a question */
@@ -241,6 +257,14 @@ function showAnswers(answers) {
 	</div>	
 
 </section>
+</div>
+
+<div class="wrapper">
+<div class="stats">
+<span class="stat_header">Active Clients:</span> <span class="stat_value" id="acc">1</span>
+<span class="stat_header">MPS:</span> <span class="stat_value" id="mps">0.0</span>
+<span class="stat_header">BPS:</span> <span class="stat_value" id="bps">0.0</span>
+</div>
 </div>
 
 <!-- debug stuff -->

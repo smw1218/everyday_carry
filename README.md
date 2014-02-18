@@ -8,10 +8,10 @@ Run
 ---
 Install redis
 
-debian/ubuntu
+debian/ubuntu:
 apt-get install redis-server
 
-mac os
+mac os:
 brew install redis # follow brew instructions for launchctl to start
 
 ```
