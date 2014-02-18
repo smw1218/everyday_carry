@@ -55,7 +55,7 @@ function onMessage(evt) {
 			showQuestions(obj.data.questions);
 			break;
 		case "answers":
-			showAnswers(obj.data.answers);
+			showAnswers(obj.data);
 			break;
 		case "answer-selected":
 			showSelectedAnswer(obj.data.answer);
@@ -181,27 +181,30 @@ function showSelectedAnswer(answer) {
 }
 
 /* Handles answers sent from the server */
-function showAnswers(answers) {
+function showAnswers(data) {
+	if (data.question == selectedQuestion) {
+	var answers = data.answers
 	var qs = [];
-	$.each(answers, function(i, q) {
-		if($("#vote-"+q.id).exists()) {
-			$("#vote-"+q.id).html(q.votes);
-		} else {
-			var ali = $(".answer-template")
-				.clone()
-				.attr("id", "li-"+q.id)
-				.addClass("answer")
-				.removeClass("answer-template");
-			ali.find("div.answer-text")
-				.html(q.answer);
-			ali.find("a.answer-link")
-				.click(selectAnswer);
-			ali.find("div.vote-count")
-				.attr("id", "vote-"+q.id)
-				.html(q.votes)
-			$("#answers").append(ali);
-		}
-	});
+		$.each(answers, function(i, q) {
+			if($("#vote-"+q.id).exists()) {
+				$("#vote-"+q.id).html(q.votes);
+			} else {
+				var ali = $(".answer-template")
+					.clone()
+					.attr("id", "li-"+q.id)
+					.addClass("answer")
+					.removeClass("answer-template");
+				ali.find("div.answer-text")
+					.html(q.answer);
+				ali.find("a.answer-link")
+					.click(selectAnswer);
+				ali.find("div.vote-count")
+					.attr("id", "vote-"+q.id)
+					.html(q.votes)
+				$("#answers").append(ali);
+			}
+		});
+	}
 }
 
 </script>
