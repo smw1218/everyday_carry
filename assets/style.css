@@ -149,7 +149,9 @@ h4,
 	font-weight: bold;
 }
 h1 {
+    margin-left: 15px;
 	font-size: 24px;
+	font-style:oblique;
 }
 h2 {
 	margin: 0;
