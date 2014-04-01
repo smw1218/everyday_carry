@@ -7,11 +7,15 @@ import (
 	"hash/crc32"
 	"sort"
 	"time"
+	"strings"
+	"html"
+	"sync/atomic"
 )
 
 type Controller struct {
 	client *redis.Client
 	ww     *WebsocketWorker
+	trollCount int64
 }
 
 func NewController(host string, port int, ww *WebsocketWorker) (*Controller, error) {
@@ -81,18 +85,6 @@ func (s *Controller) NewConnectionHandler(ac *ActiveClient) {
 	}
 }
 
-func (s *Controller) HandleAnswerOld(request *Request, ac *ActiveClient) {
-	falcore.Info("Got %#v", request)
-	q, ok := request.Data["question"].(string)
-	a, ok2 := request.Data["answer"].(string)
-	if ok && ok2 {
-		s.voteAnswer(ac.Session, q, a)
-		// TODO broadcast only to conns listening to the current question
-		sp, _ := s.getAnswers(q, a)
-		s.ww.SendBroadcast(sp)
-	}
-}
-
 func (s *Controller) HandleSelectedQuestion(request *Request, ac *ActiveClient) {
 	falcore.Info("Got %#v", request)
 	q, ok := request.Data["question"].(string)
@@ -117,7 +109,11 @@ func (s *Controller) HandleAnswer(request *Request, ac *ActiveClient) {
 		Data:   map[string]interface{}{"error": "Aww, crap"},
 	}
 	if ok && ok2 {
-		_, err := s.voteAnswer(ac.Session, q, ans)
+		ansSafer := s.scrubAnswer(ans, ac)
+		if ansSafer == "" {
+			return
+		}
+		_, err := s.voteAnswer(ac.Session, q, ansSafer)
 		if err == nil {
 			sp, _ = s.getAnswers(q, ans)
 		}
@@ -129,6 +125,18 @@ func (s *Controller) HandleAnswer(request *Request, ac *ActiveClient) {
 	// send to everyone else
 	s.ww.SendBroadcast(sp)
 
+}
+
+func (s *Controller) scrubAnswer(raw string, ac *ActiveClient) string {
+	escaped := html.EscapeString(raw)
+	if escaped != raw {
+		if strings.Contains(raw, "script") || strings.Contains(raw, "meta") {
+			atomic.AddInt64(&s.trollCount, 1)
+			ac.PushChan <- &ServerPush{Method: "troll"}
+			return ""
+		}
+	}
+	return escaped
 }
 
 func (s *Controller) voteAnswer(session, question, answer string) (float64, error) {
