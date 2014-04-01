@@ -1,4 +1,4 @@
-package edc
+package main
 
 import (
 	"fmt"

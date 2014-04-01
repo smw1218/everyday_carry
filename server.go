@@ -1,7 +1,6 @@
 package main
 
 import (
-	"edc"
 	"flag"
 	"fmt"
 	"github.com/fitstar/falcore"
@@ -18,8 +17,8 @@ func main() {
 	// setup pipeline
 	pipeline := falcore.NewPipeline()
 
-	ww := edc.NewWebsocketWorker(*domain, *assetBase)
-	edc.NewController(*redisHost, *redisPort, ww)
+	ww := NewWebsocketWorker(*domain, *assetBase)
+	NewController(*redisHost, *redisPort, ww)
 
 	// file stuff
 	ff := &filter.FileFilter{
